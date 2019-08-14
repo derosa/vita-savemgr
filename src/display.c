@@ -8,6 +8,9 @@
 #include "input.h"
 #include "util.h"
 
+static char* progress_title = 0;
+int progress_use_title = 0;
+
 void init_console() {
     confirm_msg = calloc(sizeof(char), 1);
     aprintf(&confirm_msg, "%s CANCEL    %s CONFIRM", ICON_CANCEL, ICON_ENTER);
@@ -16,6 +19,8 @@ void init_console() {
     close_msg = calloc(sizeof(char), 1);
     aprintf(&close_msg, "%s CLOSE", ICON_ENTER);
     close_msg_width = vita2d_pgf_text_width(font, 1.0, close_msg);
+
+    progress_title = calloc(sizeof(char), 256);
 }
 
 // TODO: support multi line
@@ -102,6 +107,7 @@ static int progress_curr = 0;
 
 void draw_progress() {
     vita2d_start_drawing();
+    int zoom = 1;
 
     int width = 500;
     int height = 140;
@@ -122,6 +128,20 @@ void draw_progress() {
     vita2d_draw_rectangle(
         gauge_left, gauge_top, progress_width, gauge_height, LIGHT_SKY_BLUE);
 
+    if(progress_use_title){
+        int text_width = vita2d_pgf_text_width(font, zoom, progress_title);
+        int text_height = vita2d_pgf_text_height(font, zoom, progress_title);
+
+        int padding = 50;
+        int width = text_width + (padding * 2);
+        //int height = text_height + (padding * 2);
+
+        int left = (SCREEN_WIDTH - width) / 2;
+        //int top = SCREEN_HEIGHT - text_height;
+        vita2d_draw_rectangle(0, 0, SCREEN_WIDTH, text_height * 2, LIGHT_GRAY);
+        vita2d_pgf_draw_text(font, left + padding, text_height * 1.5f, RED, zoom, progress_title);
+    }
+
     vita2d_end_drawing();
     vita2d_wait_rendering_done();
     vita2d_swap_buffers();
@@ -130,10 +150,28 @@ void draw_progress() {
 void init_progress(int max) {
     progress_max = max;
     progress_curr = 0;
+    progress_use_title = 0;
+    draw_progress();
+}
+
+void init_progress_title(int max, char* title) {
+    //aprintf(&progress_title, "%s", title);
+    progress_title = title;
+    progress_max = max;
+    progress_curr = 0;
+    progress_use_title = 1;
     draw_progress();
 }
 
 void incr_progress() {
     progress_curr += 1;
     draw_progress();
+}
+
+void clear_screen(){
+    vita2d_start_drawing();
+    vita2d_clear_screen();
+    vita2d_end_drawing();
+    //vita2d_wait_rendering_done();
+    vita2d_swap_buffers();
 }

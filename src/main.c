@@ -27,6 +27,8 @@
 #include "system.h"
 #include "util.h"
 
+int on_backup_all();
+
 vita2d_pgf *font;
 SceUID kernel_modid = -1;
 SceUID user_modid = -1;
@@ -46,6 +48,7 @@ typedef enum {
     MAIN_SCREEN = 1,
     CONFIG_SCREEN,
     RELOAD_MAINSCREEN,
+    BACKUP_ALL,
     PRINT_APPINFO,
     BACKUP_MODE,
     BACKUP_CONFIRM,
@@ -86,6 +89,8 @@ int select_col = 0;
 int select_appinfo_button = 0;
 int select_slot = 0;
 int select_config = 2;
+
+int copy_savedata_to_slot(appinfo *info, int slot);
 
 char *save_dir_path(const appinfo *info) {
     // if (strncmp(info->dev, "gro0", 4) == 0) {
@@ -639,6 +644,37 @@ ScreenState on_mainscreen_event_with_dpad(int steps,
     }
 
     int btn = read_buttons();
+/*
+    if(btn & SCE_CTRL_TRIANGLE){
+        applist my_list = {0};
+        get_applist(&my_list);
+        appinfo *current = my_list.items;
+        //while(current != NULL){
+        while(current != NULL){
+            copy_savedata_to_slot(current, 5);
+            // char* msg = calloc(sizeof(char), 512);
+            // sprintf(msg, "Res %s: %d", current->title, res);
+
+            SceCtrlData pad ={0};
+            sceCtrlPeekBufferPositive(0, &pad, 1);
+
+            if(pad.buttons & SCE_CTRL_CIRCLE){
+                alert("Canceled", 1.0f);
+                return RELOAD_MAINSCREEN;
+            } else {
+                current = current->next;
+            }
+        }
+        
+        alert("Done", 1.0);
+
+        return RELOAD_MAINSCREEN;
+    }
+*/
+
+    if(btn & SCE_CTRL_TRIANGLE){
+        return BACKUP_ALL;
+    }
 
     if (btn & SCE_CTRL_UP) {
         if (select_row == 0) {
@@ -980,7 +1016,7 @@ int copy_savedata_to_slot(appinfo *info, int slot) {
     }
     mkdir(dest, 0777);
 
-    init_progress(file_count(src, 1));
+    init_progress_title(file_count(src, 1), info->title);
     if (copydir(src, dest, incr_progress) < 0) {
         res = ERROR_COPY_DIR;
         goto exit;
@@ -1237,6 +1273,7 @@ ScreenState slot_state_machine(appinfo *curr,
         }
     }
 }
+    
 
 int mainloop() {
     applist list = {0};
@@ -1335,6 +1372,9 @@ int mainloop() {
                                                      "Format game savedata",
                                                      format_savedata);
                     break;
+                case BACKUP_ALL:
+                    new_state = on_backup_all();
+                    break;
                 case RELOAD_MAINSCREEN:
                     return 1;
                 default:
@@ -1399,7 +1439,7 @@ int main() {
     init_input();
     init_console();
     // TODO splash
-
+    
     while (mainloop() >= 0)
         ;
 
@@ -1419,4 +1459,97 @@ error_module_load:
     sceKernelDelayThread(10 * 1000 * 1000);
     sceKernelExitProcess(1);
     return 1;
+}
+
+int backup_all(int save_slot){
+        applist my_list = {0};
+        get_applist(&my_list);
+        appinfo *current = my_list.items;
+        while(current != NULL){
+            copy_savedata_to_slot(current, save_slot);
+            SceCtrlData pad ={0};
+            sceCtrlPeekBufferPositive(0, &pad, 1);
+
+            if(pad.buttons & SCE_CTRL_CIRCLE){
+                return 1;
+            } else {
+                current = current->next;
+            }
+        }
+        return 0;
+}
+
+int get_backup_all_slot(){
+    int current_slot = 0;
+    char *slot_text = calloc(sizeof(char), 8);
+    while(1){
+        int btn = read_buttons();
+        
+        if (btn & SCE_CTRL_HOLD) {
+            continue;
+        }
+
+        if(btn & SCE_CTRL_UP){
+            current_slot++;
+        }
+        if(btn & SCE_CTRL_DOWN){
+            current_slot--;
+        }
+
+        if(btn & SCE_CTRL_ENTER){
+            return current_slot;
+        }
+
+        if(btn & SCE_CTRL_ENTER){
+            return -1;
+        }
+
+        if(current_slot < 0) current_slot = 0;
+        if(current_slot >= SLOT_BUTTON) current_slot = SLOT_BUTTON-1;
+    
+        vita2d_start_drawing();
+        {
+            int width = 500;
+            int height = 140;
+            int left = (SCREEN_WIDTH - width) / 2;
+            int top = (SCREEN_HEIGHT - height) / 2;
+            vita2d_draw_rectangle(left, top, width, height, LIGHT_GRAY);
+            
+            sprintf(slot_text, "%d", current_slot+1);
+            int text_width = vita2d_pgf_text_width(font, 1, slot_text);
+            int text_height = vita2d_pgf_text_height(font, 1, slot_text);
+            vita2d_pgf_draw_text(font, SCREEN_HALF_WIDTH -text_width/2, SCREEN_HALF_HEIGHT - text_height/2, RED, 1, slot_text);
+        }
+        vita2d_end_drawing();
+        vita2d_wait_rendering_done();
+        vita2d_swap_buffers();
+    }
+    free(slot_text);
+    return current_slot;
+}
+
+int on_backup_all(){
+    int res = confirm("Backup all games?", 1.0);
+    char* msg = calloc(sizeof(char), 256);
+
+    if(res == CONFIRM){
+        int backup_all_slot = get_backup_all_slot();
+        
+        if(backup_all_slot == -1) goto end;
+
+        sprintf(msg, "Backup all games on slot %d?", backup_all_slot+1);
+        if(confirm(msg, 1.0) == CANCEL) goto end;
+
+        int backup_res = backup_all(backup_all_slot);
+        clear_screen();
+        if( backup_res == 0){
+            alert("Backup all done", 1.0);
+        } else {
+            alert("Canceled!", 1.0);
+        }
+    }
+
+    end:
+    free(msg);
+    return RELOAD_MAINSCREEN;
 }
